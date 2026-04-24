@@ -1,0 +1,14 @@
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+runs/
+test_result/
+
+*.log
+*.tmp
+*.swp
+*.swo
+
