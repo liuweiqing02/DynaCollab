@@ -1,25 +1,8 @@
 # DynaCollab
 
-This repository provides the public training code for DynaCollab, a dual-modal 3D segmentation framework with optional Dynamic Anatomical Alignment (DAA), Cross-Modality Alignment Units (CMAU), and Two-Stage Task-Aware Collaborative Contrastive Loss (TSTCL).
+Official implementation of **DynaCollab**, a dual-modal 3D medical image segmentation framework with dynamic cross-modal collaboration.
 
-## Release Scope
-
-The public release focuses on the model family used in the paper:
-
-| Option | Description |
-| --- | --- |
-| `baseline` | Dual-modal backbone without DAA or CMAU. |
-| `daa` | Backbone with DAA enabled. |
-| `daa_cmau` | Backbone with DAA and CMAU enabled. This is the default DynaCollab model. |
-
-Pretraining supports two objectives:
-
-| Option | Description |
-| --- | --- |
-| `tstcl` | Two-Stage Task-Aware Collaborative Contrastive Loss. This is the default. |
-| `contrastive` | Standard dual-modal contrastive loss. |
-
-Standalone alternative architecture branches and local-only inference scripts are intentionally not included in this release.
+DynaCollab combines a dual-modal segmentation backbone with **Dynamic Anatomical Alignment (DAA)** and **Cross-Modality Alignment Units (CMAU)**. For pretraining, the code supports the proposed **Two-Stage Task-Aware Collaborative Contrastive Loss (TSTCL)** as well as a standard dual-modal contrastive objective.
 
 ## Installation
 
@@ -29,11 +12,15 @@ conda activate dynacollab
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and update the dataset paths for your machine. The real `.env` file is ignored by Git.
+## Data Preparation
 
-## Data Layout
+Create a local `.env` file from the template and set the dataset locations:
 
-For carotid CT/MRI experiments, set the following paths:
+```bash
+cp .env.example .env
+```
+
+For carotid CT/MRI experiments, configure:
 
 ```bash
 DYNACOLLAB_CAROTID_CT_TRAIN_IMAGES=./data/CarotidArtery_CT/imagesTr
@@ -42,15 +29,17 @@ DYNACOLLAB_CAROTID_MRI_TRAIN_IMAGES=./data/CarotidArtery_MRI/imagesTr
 DYNACOLLAB_CAROTID_MRI_TRAIN_LABELS=./data/CarotidArtery_MRI/labelsTr
 ```
 
-For BraTS19 experiments, set:
+For BraTS19 experiments, configure:
 
 ```bash
 DYNACOLLAB_BRATS_TRAIN_DIR=./data/BraTS19/HGG
 ```
 
-## Usage
+The training code reads NIfTI files (`.nii` or `.nii.gz`) and performs resampling, center cropping, paired augmentation, train/validation splitting, checkpointing, and metric logging.
 
-Pretrain the default DynaCollab configuration:
+## Quick Start
+
+Pretrain DynaCollab with the default setting:
 
 ```bash
 python main.py --mode pretraining --data carotid
@@ -62,7 +51,15 @@ Fine-tune from a pretrained checkpoint:
 python main.py --mode finetuning --data carotid --pretrained_path ./runs/<run>/checkpoints/best.pth
 ```
 
-Select model and loss variants:
+Use BraTS19 by changing the dataset argument:
+
+```bash
+python main.py --mode pretraining --data BraTs19
+```
+
+## Reproducible Configurations
+
+The main ablation settings can be reproduced through `--fusion` and `--pretrain_loss`:
 
 ```bash
 python main.py --mode pretraining --data carotid --fusion baseline --pretrain_loss contrastive
@@ -71,22 +68,37 @@ python main.py --mode pretraining --data carotid --fusion daa_cmau --pretrain_lo
 python main.py --mode pretraining --data carotid --fusion daa_cmau --pretrain_loss tstcl
 ```
 
-The last command is the default DynaCollab setting reported as the main method.
+The final command corresponds to the default DynaCollab configuration.
 
-## Main Arguments
+## Arguments
 
-| Argument | Choices | Default |
-| --- | --- | --- |
-| `--mode` | `pretraining`, `finetuning` | Required |
-| `--data` | `carotid`, `BraTs19` | `carotid` |
-| `--fusion` | `baseline`, `daa`, `daa_cmau` | `daa_cmau` |
-| `--pretrain_loss` | `tstcl`, `contrastive` | `tstcl` |
-| `--pretrained_path` | path | None |
-| `--resume_checkpoint` | path | None |
+| Argument | Choices | Default | Description |
+| --- | --- | --- | --- |
+| `--mode` | `pretraining`, `finetuning` | Required | Training stage. |
+| `--data` | `carotid`, `BraTs19` | `carotid` | Dataset configuration. |
+| `--fusion` | `baseline`, `daa`, `daa_cmau` | `daa_cmau` | Cross-modal collaboration strategy. |
+| `--pretrain_loss` | `tstcl`, `contrastive` | `tstcl` | Pretraining objective. |
+| `--pretrained_path` | path | None | Pretrained weights used for fine-tuning. |
+| `--resume_checkpoint` | path | None | Checkpoint used to resume a training run. |
+| `--tf` | `no_tf`, `all_tf` | `no_tf` | Augmentation setting. |
+| `--train_ratio` | float | `0.8` | Training split ratio. |
+| `--split_seed` | int | `42` | Random seed for train/validation splitting. |
 
-## Reproducibility Checks
+## Project Structure
 
-Before training, the release can be checked with:
+```text
+DynaCollab/
+  main.py                 # Command-line entry point
+  config.py               # Experiment and path configuration
+  dataset.py              # Carotid and BraTS19 dataset loaders
+  trainer.py              # Pretraining and fine-tuning loops
+  losses.py               # TSTCL, contrastive, Dice, and CE losses
+  metrics.py              # Segmentation metrics
+  models/dynacollab.py    # Dual-modal backbone with DAA/CMAU
+  training/               # Runtime builders and launch utilities
+```
+
+## Sanity Checks
 
 ```bash
 python -m compileall -q .
@@ -94,4 +106,6 @@ python main.py --help
 python -c "from config import Config, PRETRAINING; Config(PRETRAINING, data='carotid')"
 ```
 
-Training outputs are written under `runs/`. Checkpoints, datasets, local environment files, and evaluation outputs are ignored by Git.
+## Citation
+
+If this code is useful for your research, please cite the corresponding DynaCollab paper.
