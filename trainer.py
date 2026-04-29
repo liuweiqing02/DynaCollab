@@ -10,10 +10,9 @@ from metrics import BraTSMetrics, SegmentationMetrics
 
 
 class Trainer:
-    def __init__(self, net_1, net_2, loss, loader_train, loader_val, config, dataset_val=None):
+    def __init__(self, model, loss, loader_train, loader_val, config, dataset_val=None):
+        self.model = model
         self.loss = loss
-        self.model1 = net_1
-        self.model2 = net_2
         self.loader = loader_train
         self.loader_val = loader_val
         self.config = config
@@ -24,11 +23,7 @@ class Trainer:
         if config.cuda and not torch.cuda.is_available():
             raise ValueError("CUDA was requested but no GPU is available. Set config.cuda=False to run on CPU.")
 
-        self.is_single_stream = net_2 is None
-        self.model1 = DataParallel(self.model1).to(self.device)
-        if not self.is_single_stream:
-            self.model2 = DataParallel(self.model2).to(self.device)
-
+        self.model = DataParallel(self.model).to(self.device)
         self.optimizer = None
         self.scheduler = None
         self.best_val_dice = 0.0
@@ -48,13 +43,8 @@ class Trainer:
             os.path.join(self.config.checkpoint_dir, f"{self.config.checkpoint_name}_best.pth"),
         )
 
-    def _model_parameters(self):
-        if self.is_single_stream:
-            return list(self.model1.parameters())
-        return list(self.model1.parameters()) + list(self.model2.parameters())
-
     def _configure_optimizer(self):
-        params = self._model_parameters()
+        params = list(self.model.parameters())
         self.optimizer = torch.optim.AdamW(params, lr=self.config.lr, weight_decay=self.config.weight_decay)
 
         warmup_iters = min(10, max(1, self.config.nb_epochs))
@@ -73,17 +63,14 @@ class Trainer:
         }
 
     def _checkpoint(self, epoch):
-        checkpoint = {
+        return {
             "epoch": epoch,
-            "model1": self.model1.state_dict(),
+            "model": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict() if self.optimizer is not None else None,
             "scheduler": self.scheduler.state_dict() if self.scheduler is not None else None,
             "loss": self.loss.state_dict() if hasattr(self.loss, "state_dict") else None,
             "config": self.config.to_dict(),
         }
-        if not self.is_single_stream:
-            checkpoint["model2"] = self.model2.state_dict()
-        return checkpoint
 
     def _save_checkpoint(self, checkpoint, is_best):
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
@@ -92,35 +79,28 @@ class Trainer:
             torch.save(checkpoint, self._best_ckpt_path())
 
     def _pretraining_forward(self, mod1, mod2, mod1_label, mod2_label):
-        if self.is_single_stream:
-            if self.config.use_global_local_loss:
-                global_projs, local_projs, deform_params = self.model1([mod1, mod2])
-                return self.loss(
-                    global_projs[0],
-                    global_projs[1],
-                    local_projs[0],
-                    local_projs[1],
-                    mod1_label,
-                    mod2_label,
-                    deform_params_list=deform_params,
-                )
+        if self.config.use_global_local_loss:
+            global_projs, local_projs, deform_params = self.model([mod1, mod2])
+            return self.loss(
+                global_projs[0],
+                global_projs[1],
+                local_projs[0],
+                local_projs[1],
+                mod1_label,
+                mod2_label,
+                deform_params_list=deform_params,
+            )
 
-            projections = self.model1([mod1, mod2])
-            if len(projections) != 2:
-                raise ValueError("Expected two modality projections for contrastive pretraining.")
-            return self.loss(projections[0], projections[1])
-
-        z_i = self.model1(mod1)
-        z_j = self.model2(mod2)
-        return self.loss(z_i, z_j)
+        projections = self.model([mod1, mod2])
+        if len(projections) != 2:
+            raise ValueError("Expected two modality projections for contrastive pretraining.")
+        return self.loss(projections[0], projections[1])
 
     def _segmentation_forward(self, mod1, mod2):
-        if self.is_single_stream:
-            outputs = self.model1([mod1, mod2])
-            if len(outputs) != 2:
-                raise ValueError("Expected two modality segmentation outputs.")
-            return outputs[0], outputs[1]
-        return self.model1(mod1), self.model2(mod2)
+        outputs = self.model([mod1, mod2])
+        if len(outputs) != 2:
+            raise ValueError("Expected two modality segmentation outputs.")
+        return outputs[0], outputs[1]
 
     def pretraining(self):
         model_params = self._configure_optimizer()
@@ -133,10 +113,7 @@ class Trainer:
         self.logger.info(f"Pretraining with {self.config.pretrain_loss} loss from epoch {start_epoch}")
 
         for epoch in range(start_epoch, self.config.nb_epochs + 1):
-            self.model1.train()
-            if not self.is_single_stream:
-                self.model2.train()
-
+            self.model.train()
             train_loss = 0.0
             grad_accum_steps = max(1, int(getattr(self.config, "grad_accum_steps", 1)))
             self.optimizer.zero_grad(set_to_none=True)
@@ -184,10 +161,7 @@ class Trainer:
                 break
 
     def _validate_pretraining(self):
-        self.model1.eval()
-        if not self.is_single_stream:
-            self.model2.eval()
-
+        self.model.eval()
         val_loss = 0.0
         with torch.no_grad():
             for batch in tqdm(self.loader_val, desc="Validate pretraining"):
@@ -247,10 +221,7 @@ class Trainer:
         )
 
     def _train_segmentation_epoch(self, epoch, model_params, metrics_mod1, metrics_mod2):
-        self.model1.train()
-        if not self.is_single_stream:
-            self.model2.train()
-
+        self.model.train()
         metrics = {"loss": 0.0, "loss_mod1": 0.0, "loss_mod2": 0.0}
         grad_accum_steps = max(1, int(getattr(self.config, "grad_accum_steps", 1)))
         self.optimizer.zero_grad(set_to_none=True)
@@ -288,10 +259,7 @@ class Trainer:
         return metrics
 
     def _validate_segmentation_epoch(self, metrics_mod1, metrics_mod2):
-        self.model1.eval()
-        if not self.is_single_stream:
-            self.model2.eval()
-
+        self.model.eval()
         metrics_mod1.reset()
         metrics_mod2.reset()
         val_metrics = {"loss": 0.0, "loss_mod1": 0.0, "loss_mod2": 0.0}
@@ -351,24 +319,19 @@ class Trainer:
             raise ValueError(f"Unable to load checkpoint {path}: {exc}") from exc
 
         if hasattr(checkpoint, "state_dict"):
-            state = checkpoint.state_dict()
-            self.model1.load_state_dict(state, strict=strict)
-            if not self.is_single_stream:
-                self.model2.load_state_dict(state, strict=strict)
+            self.model.load_state_dict(checkpoint.state_dict(), strict=strict)
             return 1
 
         if not isinstance(checkpoint, dict):
-            self.model1.load_state_dict(checkpoint, strict=strict)
-            if not self.is_single_stream:
-                self.model2.load_state_dict(checkpoint, strict=strict)
+            self.model.load_state_dict(checkpoint, strict=strict)
             return 1
 
-        if "model1" in checkpoint:
-            info = self.model1.load_state_dict(checkpoint["model1"], strict=strict)
-            self.logger.info(f"Loaded model1: {info}")
-        if "model2" in checkpoint and not self.is_single_stream:
-            info = self.model2.load_state_dict(checkpoint["model2"], strict=strict)
-            self.logger.info(f"Loaded model2: {info}")
+        if "model" not in checkpoint:
+            raise ValueError(f"Checkpoint {path} does not contain a 'model' state dict.")
+
+        info = self.model.load_state_dict(checkpoint["model"], strict=strict)
+        self.logger.info(f"Loaded model: {info}")
+
         if "loss" in checkpoint and checkpoint["loss"] is not None and hasattr(self.loss, "load_state_dict"):
             self.loss.load_state_dict(checkpoint["loss"])
         if load_optimizer and self.optimizer is not None and checkpoint.get("optimizer") is not None:

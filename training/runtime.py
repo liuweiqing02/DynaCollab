@@ -6,7 +6,7 @@ from torch.utils.data import Subset
 from config import PRETRAINING
 from dataset import split_dataset
 from trainer import Trainer
-from training.builders import build_dataloaders, build_loss, build_model_pair, get_dataset_class
+from training.builders import build_dataloaders, build_loss, build_model, get_dataset_class
 
 
 def init_logger(logger, config):
@@ -81,9 +81,9 @@ def run_training(config):
     save_validation_ids(dataset_val_full, dataset_val, config)
 
     loader_train, loader_val = build_dataloaders(dataset_train_full, dataset_train, dataset_val, config)
-    net_1, net_2 = build_model_pair(config)
+    net = build_model(config)
     loss = build_loss(config)
-    model = Trainer(net_1, net_2, loss, loader_train, loader_val, config, dataset_val=dataset_val)
+    model = Trainer(net, loss, loader_train, loader_val, config, dataset_val=dataset_val)
 
     if config.mode == PRETRAINING:
         model.pretraining()

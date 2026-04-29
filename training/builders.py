@@ -43,21 +43,17 @@ def build_dataloaders(dataset, dataset_train, dataset_val, config):
     return loader_train, loader_val
 
 
-def build_model_pair(config):
+def build_model(config):
     mode = "pretrain" if config.mode == PRETRAINING else "seg"
-    return (
-        CrossModalUNet(
-            config.num_classes,
-            in_channels=config.in_channels,
-            mode=mode,
-            num_modalities=2,
-            growth_rate=config.growth_rate,
-            use_anatomical_alignment=config.use_anatomical_alignment,
-            use_global_local_loss=config.use_global_local_loss,
-            baseline=config.baseline,
-            use_cross_align=config.use_cross_align,
-        ),
-        None,
+    return CrossModalUNet(
+        config.num_classes,
+        in_channels=config.in_channels,
+        mode=mode,
+        num_modalities=2,
+        growth_rate=config.growth_rate,
+        use_global_local_loss=config.use_global_local_loss,
+        baseline=config.baseline,
+        use_cross_align=config.use_cross_align,
     )
 
 

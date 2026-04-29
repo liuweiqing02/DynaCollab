@@ -131,10 +131,6 @@ class Config:
         return self.fusion_strategy == FUSION_BASELINE
 
     @property
-    def use_anatomical_alignment(self):
-        return not self.baseline
-
-    @property
     def use_cross_align(self):
         return self.fusion_strategy == FUSION_DAA_CMAU
 
@@ -150,7 +146,6 @@ class Config:
             else:
                 out[k] = str(v)
         out["baseline"] = self.baseline
-        out["use_anatomical_alignment"] = self.use_anatomical_alignment
         out["use_cross_align"] = self.use_cross_align
         return out
 

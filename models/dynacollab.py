@@ -197,7 +197,6 @@ class CrossModalUNet(nn.Module):
         num_modalities=2,
         mode="seg",
         growth_rate=32,
-        use_anatomical_alignment=True,
         alignment_mode="key",
         reduction_ratio=8,
         use_global_local_loss=True,
@@ -210,18 +209,11 @@ class CrossModalUNet(nn.Module):
         self.mode = mode
         self.growth_rate = growth_rate
 
-        self.use_anatomical_alignment = use_anatomical_alignment
         self.alignment_mode = alignment_mode
         self.reduction_ratio = reduction_ratio
         self.use_global_local_loss = use_global_local_loss
         self.baseline = baseline
         self.use_cross_align = use_cross_align
-
-        if not self.baseline and not self.use_anatomical_alignment:
-            raise ValueError(
-                "Legacy shared-fusion path has been removed. "
-                "Please use baseline=True or use_anatomical_alignment=True."
-            )
 
         self.init_convs = nn.ModuleList(
             [
