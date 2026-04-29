@@ -4,7 +4,7 @@ Official implementation for:
 
 **DynaCollab: Dynamic Collaborative Contrast for Multimodal Medical Segmentation**
 
-DynaCollab addresses cross-modal feature isolation and high-level feature insensitivity in multimodal 3D medical image segmentation. The code provides the full reproducibility pipeline: preprocessing in the dataset loaders, training configuration, supervised contrastive representation learning, segmentation fine-tuning, inference, and evaluation utilities.
+DynaCollab addresses cross-modal feature isolation and high-level feature insensitivity in multimodal 3D medical image segmentation. The code provides the core reproducibility pipeline: preprocessing in the dataset loaders, training configuration, supervised contrastive representation learning, segmentation fine-tuning, and evaluation utilities.
 
 ## 1. Main Features
 
@@ -27,7 +27,6 @@ DynaCollab addresses cross-modal feature isolation and high-level feature insens
   CompatibleModel.py              # Representation-learning and fine-tuning loops
   losses.py                       # TSTCL, deformation regularization, and segmentation losses
   metrics.py                      # Dice, IoU, HD95, and BraTS regional metrics
-  testdata.py                     # Inference and NIfTI export
   training/
     builders.py                   # Dataset/model/loss builders
     runtime.py                    # Runtime orchestration
@@ -52,7 +51,7 @@ pip install numpy scipy scikit-image nibabel pandas openpyxl scikit-learn tqdm m
 
 ## 4. Data Preparation
 
-Set dataset paths with environment variables before running training or inference. See `.env.example` for all available variables. The code intentionally uses public placeholder paths by default and does not include local server paths.
+Set dataset paths with environment variables before running training. See `.env.example` for the public template. The code intentionally uses public placeholder paths by default and does not include local server paths.
 
 ### 4.1 Carotid Artery Dataset
 
@@ -64,13 +63,9 @@ Expected directories:
 CarotidArtery_CT/
   imagesTr/
   labelsTr/
-  imagesTs/
-  labelsTs/
 CarotidArtery_MRI/
   imagesTr/
   labelsTr/
-  imagesTs/
-  labelsTs/
 ```
 
 Configure paths, for example:
@@ -90,7 +85,6 @@ Use `--data BraTs19` and set:
 
 ```bash
 export DYNACOLLAB_BRATS_TRAIN_DIR=/path/to/BraTS19/HGG
-export DYNACOLLAB_BRATS_VAL_DIR=/path/to/BraTS19/VAL
 ```
 
 Each patient folder is expected to contain:
@@ -198,29 +192,7 @@ python main.py --mode pretraining \
 | `--resume_checkpoint` | resume checkpoint including optimizer/scheduler state |
 | `--pretrained_path` | load representation-learning weights for fine-tuning |
 
-## 8. Inference
-
-```bash
-python testdata.py --model_path ./runs/<run_name>/checkpoints/best.pth --config dongmai
-python testdata.py --model_path ./runs/<run_name>/checkpoints/best.pth --config BraTs19
-```
-
-For carotid test data, optionally set:
-
-```bash
-export DYNACOLLAB_CAROTID_CT_TEST_IMAGES=/path/to/CarotidArtery_CT/imagesTs
-export DYNACOLLAB_CAROTID_CT_TEST_LABELS=/path/to/CarotidArtery_CT/labelsTs
-export DYNACOLLAB_CAROTID_MRI_TEST_IMAGES=/path/to/CarotidArtery_MRI/imagesTs
-export DYNACOLLAB_CAROTID_MRI_TEST_LABELS=/path/to/CarotidArtery_MRI/labelsTs
-```
-
-Predicted NIfTI files are written to:
-
-```text
-test_result/<model_name>/
-```
-
-## 9. Output Files
+## 8. Output Files
 
 Each run creates:
 
@@ -237,7 +209,7 @@ runs/<run_name>/
 
 `validation_ids.csv` records the held-out patient IDs for reproducibility.
 
-## 10. Recommended Revision Experiments
+## 9. Recommended Revision Experiments
 
 For the major revision, recommended starting settings are:
 
@@ -253,6 +225,6 @@ fine-tuning aug:        no_tf
 
 Final hyperparameters should be reported according to the actual rerun experiments used in the revised manuscript.
 
-## 11. Code and Data Availability Notes
+## 10. Code and Data Availability Notes
 
-The in-house carotid artery dataset cannot be publicly released because of data privacy and institutional restrictions. This repository releases the implementation, preprocessing logic, training configuration, inference script, and evaluation utilities to support reproducibility.
+The in-house carotid artery dataset cannot be publicly released because of data privacy and institutional restrictions. This repository releases the implementation, preprocessing logic, training configuration, and evaluation utilities to support reproducibility.
