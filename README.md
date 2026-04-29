@@ -28,8 +28,6 @@ DynaCollab addresses cross-modal feature isolation and high-level feature insens
   losses.py                       # TSTCL, deformation regularization, and segmentation losses
   metrics.py                      # Dice, IoU, HD95, and BraTS regional metrics
   testdata.py                     # Inference and NIfTI export
-  finetune_brats_fused.py         # Optional BraTS fused-modality fine-tuning script
-  finetune_dongmai_singlemod.py   # Optional single-modality carotid fine-tuning script
   training/
     builders.py                   # Dataset/model/loss builders
     runtime.py                    # Runtime orchestration
