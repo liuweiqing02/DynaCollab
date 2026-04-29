@@ -1,186 +1,260 @@
-# SSCLseg
+# DynaCollab
 
-SSCLseg 是一个面向 3D 医学图像的双模态分割训练项目，支持预训练与微调两阶段流程，提供统一训练入口、自动化实验目录管理、断点恢复与早停机制。
+Official implementation for:
 
-## 1. 功能概览
+**DynaCollab: Dynamic Collaborative Contrast for Multimodal Medical Segmentation**
 
-- 双模态 3D 分割训练（如 CT + MR）。
-- 两阶段训练流程：`pretraining` 与 `finetuning`。
-- 多模型支持：`CrossModalUNet`、`UNet`、`VTUNet`、`UNETR`、`UniUnet`。
-- 多融合策略支持：`baseline`、`daa`、`daa_cmau`。
-- 自动保存运行日志、最佳模型、最新模型、配置快照。
-- 支持断点恢复与可配置早停。
+DynaCollab addresses cross-modal feature isolation and high-level feature insensitivity in multimodal 3D medical image segmentation. The code provides the full reproducibility pipeline: preprocessing in the dataset loaders, training configuration, supervised contrastive representation learning, segmentation fine-tuning, inference, and evaluation utilities.
 
-## 2. 项目结构
+## 1. Main Features
 
-- `main.py`：统一训练入口（推荐）。
-- `config.py`：全局配置与实验命名逻辑。
-- `training/runtime.py`：训练流程编排。
-- `training/builders.py`：数据加载器、模型、损失构建。
-- `dataset.py`：数据读取、预处理、增强、划分。
-- `augmentations.py`：增强算子实现。
-- `CompatibleModel.py`：核心训练循环与验证逻辑。
-- `models/`：模型定义。
-- `testdata.py`：推理与结果导出脚本。
-- `finetune_brats_fused.py`：BraTS 融合微调脚本（可选）。
-- `finetune_dongmai_singlemod.py`：Dongmai 单模态微调脚本（可选）。
+- Dual-input 3D multimodal medical image segmentation.
+- Cross-modal Dynamic Anatomical Alignment (DAA) with hierarchical residual fusion.
+- Two-Stage Task-Aware Collaborative Contrastive Loss (TSTCL), combining anatomically consistent global contrast and dynamically anchored local contrast.
+- Dice + cross-entropy segmentation fine-tuning initialized from the representation-learning encoder.
+- Patient-wise train/validation split with saved validation IDs.
+- Checkpointing, resume training, early stopping, and run-specific configuration snapshots.
+- Gradient accumulation for `128 x 128 x 128` input volumes under limited GPU memory.
 
-## 3. 环境要求
+## 2. Project Structure
 
-- Python 3.8 及以上。
-- 推荐使用 CUDA + PyTorch GPU 训练环境。
+```text
+.
+  main.py                         # Unified training entry
+  config.py                       # Experiment configuration and data path settings
+  dataset.py                      # Dataset loading, preprocessing, pairing, augmentation
+  augmentations.py                # 3D augmentation utilities
+  CompatibleModel.py              # Representation-learning and fine-tuning loops
+  losses.py                       # TSTCL, deformation regularization, and segmentation losses
+  metrics.py                      # Dice, IoU, HD95, and BraTS regional metrics
+  testdata.py                     # Inference and NIfTI export
+  finetune_brats_fused.py         # Optional BraTS fused-modality fine-tuning script
+  finetune_dongmai_singlemod.py   # Optional single-modality carotid fine-tuning script
+  training/
+    builders.py                   # Dataset/model/loss builders
+    runtime.py                    # Runtime orchestration
+  models/
+    CrossModalUNet.py             # DynaCollab backbone
+```
 
-常用依赖（按需安装）：
-- `torch`
-- `numpy`
-- `scipy`
-- `scikit-image`
-- `nibabel`
-- `pandas`
-- `openpyxl`
-- `scikit-learn`
-- `tqdm`
-- `matplotlib`
-- `seaborn`
+## 3. Environment
 
-示例安装命令：
+Recommended:
+
+- Python 3.8+
+- PyTorch with CUDA
+- NVIDIA GPU with sufficient memory for 3D volumes
+
+Common dependencies:
 
 ```bash
 pip install torch torchvision torchaudio
 pip install numpy scipy scikit-image nibabel pandas openpyxl scikit-learn tqdm matplotlib seaborn
 ```
 
-## 4. 数据准备
+## 4. Data Preparation
 
-在 `config.py` 中配置数据路径。
+Set dataset paths with environment variables before running training or inference. See `.env.example` for all available variables. The code intentionally uses public placeholder paths by default and does not include local server paths.
 
-### 4.1 dongmai
+### 4.1 Carotid Artery Dataset
 
-需要配置以下目录：
-- `image_dir_mod1_tr`
-- `label_dir_mod1_tr`
-- `image_dir_mod2_tr`
-- `label_dir_mod2_tr`
+Use `--data dongmai` for this dataset. The name is kept as a backward-compatible CLI key; it refers to the paired carotid CT/MRI dataset described in the paper.
 
-要求：
-- 两个模态与标签文件名中的病例 ID 一一对应。
-- 文件格式为 NIfTI（`.nii.gz`）。
+Expected directories:
 
-### 4.2 BraTs19
-
-需要配置：
-- `dir_tr`
-
-默认读取每个病例目录中的：
-- `<prefix>_t1ce.nii`
-- `<prefix>_flair.nii`
-- `<prefix>_seg.nii`
-
-## 5. 快速开始
-
-### 5.1 预训练
-
-```bash
-python main.py --mode pretraining
+```text
+CarotidArtery_CT/
+  imagesTr/
+  labelsTr/
+  imagesTs/
+  labelsTs/
+CarotidArtery_MRI/
+  imagesTr/
+  labelsTr/
+  imagesTs/
+  labelsTs/
 ```
 
-### 5.2 微调（加载预训练 best）
+Configure paths, for example:
 
 ```bash
-python main.py --mode finetuning --pretrained_path ./runs/<pretrain_run>/checkpoints/best.pth
+export DYNACOLLAB_CAROTID_CT_TRAIN_IMAGES=/path/to/CarotidArtery_CT/imagesTr
+export DYNACOLLAB_CAROTID_CT_TRAIN_LABELS=/path/to/CarotidArtery_CT/labelsTr
+export DYNACOLLAB_CAROTID_MRI_TRAIN_IMAGES=/path/to/CarotidArtery_MRI/imagesTr
+export DYNACOLLAB_CAROTID_MRI_TRAIN_LABELS=/path/to/CarotidArtery_MRI/labelsTr
 ```
 
-### 5.3 临时覆盖增强策略
+The CT and MRI files are paired by the numeric patient ID extracted from filenames. Each image must have a corresponding label file.
+
+### 4.2 BraTS19 Dataset
+
+Use `--data BraTs19` and set:
 
 ```bash
-python main.py --mode pretraining --tf all_tf
-python main.py --mode finetuning --tf no_tf
+export DYNACOLLAB_BRATS_TRAIN_DIR=/path/to/BraTS19/HGG
+export DYNACOLLAB_BRATS_VAL_DIR=/path/to/BraTS19/VAL
 ```
 
-### 5.4 临时覆盖训练/验证划分
+Each patient folder is expected to contain:
+
+```text
+<prefix>_t1.nii
+<prefix>_t1ce.nii
+<prefix>_t2.nii
+<prefix>_flair.nii
+<prefix>_seg.nii
+```
+
+The model uses two dual-channel modality groups:
+
+- `X^(1) = [T1, T1ce]`
+- `X^(2) = [T2, FLAIR]`
+
+Therefore, `config.in_channels = 2` for BraTS19.
+
+## 5. Preprocessing and Input Size
+
+The default spatial protocol is implemented in `dataset.py`:
+
+1. Resample each volume to `1.5 x 1.5 x 1.5 mm`.
+2. Pad or center-crop to `128 x 128 x 128`.
+3. Use `128 x 128 x 128` as the model input.
+
+For training augmentation with `--tf all_tf`, image and label channels are transformed with the same random seed so spatial correspondence is preserved.
+
+## 6. Training
+
+### 6.1 Supervised Contrastive Representation Learning
 
 ```bash
-python main.py --mode pretraining --train_ratio 0.8 --split_seed 42
+python main.py --mode pretraining --data dongmai
 ```
 
-## 6. 配置说明（`config.py`）
+With explicit augmentation and gradient accumulation:
 
-常用参数如下：
+```bash
+python main.py --mode pretraining --data BraTs19 --tf all_tf --batch_size 1 --grad_accum_steps 2
+```
 
-| 参数 | 含义 |
+### 6.2 Segmentation Fine-Tuning
+
+```bash
+python main.py --mode finetuning --data dongmai --pretrained_path ./runs/<pretrain_run>/checkpoints/best.pth
+```
+
+With 128-volume memory control:
+
+```bash
+python main.py --mode finetuning \
+  --data BraTs19 \
+  --pretrained_path ./runs/<pretrain_run>/checkpoints/best.pth \
+  --batch_size 1 \
+  --grad_accum_steps 2
+```
+
+The effective training batch size is:
+
+```text
+effective_batch_size = batch_size x grad_accum_steps
+```
+
+Gradient accumulation helps emulate a larger batch size, but it does not reduce the memory needed by a single forward/backward pass. If `128 x 128 x 128` still causes out-of-memory errors, reduce `batch_size` to 1 first, then increase `grad_accum_steps`.
+
+### 6.3 Resume Training
+
+Resume representation learning:
+
+```bash
+python main.py --mode pretraining --data dongmai --resume_checkpoint ./runs/<run_name>/checkpoints/latest.pth
+```
+
+Resume fine-tuning:
+
+```bash
+python main.py --mode finetuning --data dongmai --resume_checkpoint ./runs/<run_name>/checkpoints/latest.pth
+```
+
+## 7. Useful Runtime Options
+
+```bash
+python main.py --mode pretraining \
+  --data BraTs19 \
+  --tf all_tf \
+  --train_ratio 0.8 \
+  --split_seed 42 \
+  --batch_size 1 \
+  --batch_size_val 1 \
+  --grad_accum_steps 2
+```
+
+| Argument | Meaning |
 |---|---|
-| `data` | 数据集选择（`dongmai` / `BraTs19`） |
-| `model` | 模型名称 |
-| `fusion_strategy` | 融合策略（`baseline` / `daa` / `daa_cmau`） |
-| `use_global_local_loss` | 预训练是否使用全局+局部损失 |
-| `batch_size` / `batch_size_val` | 训练/验证 batch 大小 |
-| `lr` | 学习率 |
-| `weight_decay` | 权重衰减 |
-| `nb_epochs` | 训练轮数 |
-| `tf` | 增强开关（`no_tf` / `all_tf`） |
-| `desired_spacing` | 重采样 spacing |
-| `target_size` / `target_size_crop` | pad/crop 目标尺寸 |
-| `enable_memory_cache` | 是否缓存预处理后的样本 |
-| `train_ratio` / `split_seed` | 训练验证划分比例与随机种子 |
-| `use_early_stopping` | 是否启用早停 |
-| `early_stopping_patience` | 早停耐心轮数 |
-| `early_stopping_min_delta` | 指标最小改善阈值 |
-| `early_stopping_start_epoch` | 从哪一轮开始早停判断 |
+| `--mode` | `pretraining` or `finetuning` |
+| `--data` | `dongmai` for the paired carotid CT/MRI dataset, or `BraTs19` |
+| `--tf` | `no_tf` or `all_tf` augmentation mode |
+| `--train_ratio` | patient-wise training split ratio |
+| `--split_seed` | split random seed |
+| `--batch_size` | training micro-batch size |
+| `--batch_size_val` | validation batch size |
+| `--grad_accum_steps` | number of gradient accumulation steps |
+| `--resume_checkpoint` | resume checkpoint including optimizer/scheduler state |
+| `--pretrained_path` | load representation-learning weights for fine-tuning |
 
-## 7. 中断与恢复
-
-训练过程中可使用 `Ctrl+C` 安全中断。项目每个 epoch 会保存：
-- `latest.pth`：最新 checkpoint。
-- `best.pth`：当前最佳 checkpoint。
-
-### 7.1 恢复预训练
-
-```bash
-python main.py --mode pretraining --resume_checkpoint ./runs/<run_name>/checkpoints/latest.pth
-```
-
-### 7.2 恢复微调
-
-```bash
-python main.py --mode finetuning --resume_checkpoint ./runs/<run_name>/checkpoints/latest.pth
-```
-
-说明：
-- `--resume_checkpoint` 会恢复模型参数、优化器与调度器状态。
-- `--pretrained_path` 仅加载模型权重，适合启动新的微调任务。
-
-## 8. 推理与结果导出
-
-可使用 `testdata.py` 对训练后模型进行推理并导出 NIfTI 结果：
+## 8. Inference
 
 ```bash
 python testdata.py --model_path ./runs/<run_name>/checkpoints/best.pth --config dongmai
 python testdata.py --model_path ./runs/<run_name>/checkpoints/best.pth --config BraTs19
 ```
 
-输出目录：
-- `test_result/<model_name>/`
+For carotid test data, optionally set:
 
-## 9. 运行产物
+```bash
+export DYNACOLLAB_CAROTID_CT_TEST_IMAGES=/path/to/CarotidArtery_CT/imagesTs
+export DYNACOLLAB_CAROTID_CT_TEST_LABELS=/path/to/CarotidArtery_CT/labelsTs
+export DYNACOLLAB_CAROTID_MRI_TEST_IMAGES=/path/to/CarotidArtery_MRI/imagesTs
+export DYNACOLLAB_CAROTID_MRI_TEST_LABELS=/path/to/CarotidArtery_MRI/labelsTs
+```
 
-每次训练会在 `runs/<run_name>/` 下生成：
-- `logs/training.log`
-- `logs/validation_ids.csv`
-- `checkpoints/latest.pth`
-- `checkpoints/best.pth`
-- `config_snapshot.json`
+Predicted NIfTI files are written to:
 
-## 10. 调参建议
+```text
+test_result/<model_name>/
+```
 
-推荐初始方案：
-- 预训练使用 `tf=all_tf`。
-- 微调使用 `tf=no_tf`。
-- 固定 `train_ratio=0.8` 与 `split_seed=42` 保证可复现。
+## 9. Output Files
 
-推荐调参顺序：
-1. 学习率 `lr`
-2. 批大小 `batch_size`
-3. 训练轮数 `nb_epochs`
-4. 早停参数 `patience` 与 `min_delta`
-5. 融合策略与网络规模（`fusion_strategy`、`growth_rate`）
+Each run creates:
 
+```text
+runs/<run_name>/
+  logs/
+    training.log
+    validation_ids.csv
+  checkpoints/
+    latest.pth
+    best.pth
+  config_snapshot.json
+```
+
+`validation_ids.csv` records the held-out patient IDs for reproducibility.
+
+## 10. Recommended Revision Experiments
+
+For the major revision, recommended starting settings are:
+
+```text
+input size:             128 x 128 x 128
+batch_size:             1
+grad_accum_steps:       2 or 3
+train_ratio:            0.8
+split_seed:             42
+representation aug:     all_tf
+fine-tuning aug:        no_tf
+```
+
+Final hyperparameters should be reported according to the actual rerun experiments used in the revised manuscript.
+
+## 11. Code and Data Availability Notes
+
+The in-house carotid artery dataset cannot be publicly released because of data privacy and institutional restrictions. This repository releases the implementation, preprocessing logic, training configuration, inference script, and evaluation utilities to support reproducibility.
