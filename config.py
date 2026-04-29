@@ -10,13 +10,17 @@ FUSION_DAA = "daa"
 FUSION_DAA_CMAU = "daa_cmau"
 
 
+def _path_from_env(name, default):
+    return os.environ.get(name, default)
+
+
 class Config:
-    def __init__(self, mode):
+    def __init__(self, mode, data="dongmai"):
         assert mode in {PRETRAINING, FINE_TUNING}, f"Unknown mode: {mode}"
         self.mode = mode
 
         # Core experiment choices
-        self.data = "dongmai"  # dongmai | BraTs19
+        self.data = data  # dongmai | BraTs19
         self.model = "CrossModalUNet"  # CrossModalUNet | UNet | VTUNet | UNETR | UniUnet
         self.growth_rate = 32
 
@@ -30,22 +34,34 @@ class Config:
         self.use_global_local_loss = True
 
         # Spatial preprocess
-        self.input_size = (1, 96, 96, 96)
+        self.input_size = (1, 128, 128, 128)
         self.desired_spacing = (1.5, 1.5, 1.5)
         self.target_size = (128, 128, 128)
-        self.target_size_crop = (96, 96, 96)
+        self.target_size_crop = (128, 128, 128)
         self.enable_memory_cache = True
 
         # Dataset-specific settings
         if self.data == "BraTs19":
-            self.dir_tr = "../BraTs19/HGG"
+            self.dir_tr = _path_from_env("DYNACOLLAB_BRATS_TRAIN_DIR", "./data/BraTS19/HGG")
             self.num_classes = 4
-            self.in_channels = 1
+            self.in_channels = 2
         elif self.data == "dongmai":
-            self.image_dir_mod1_tr = "../data_125/Dataset004_dongmaiCT/imagesTr"
-            self.label_dir_mod1_tr = "../data_125/Dataset004_dongmaiCT/labelsTr"
-            self.image_dir_mod2_tr = "../data_125/Dataset005_dongmaiMR/imagesTr"
-            self.label_dir_mod2_tr = "../data_125/Dataset005_dongmaiMR/labelsTr"
+            self.image_dir_mod1_tr = _path_from_env(
+                "DYNACOLLAB_CAROTID_CT_TRAIN_IMAGES",
+                "./data/CarotidArtery_CT/imagesTr",
+            )
+            self.label_dir_mod1_tr = _path_from_env(
+                "DYNACOLLAB_CAROTID_CT_TRAIN_LABELS",
+                "./data/CarotidArtery_CT/labelsTr",
+            )
+            self.image_dir_mod2_tr = _path_from_env(
+                "DYNACOLLAB_CAROTID_MRI_TRAIN_IMAGES",
+                "./data/CarotidArtery_MRI/imagesTr",
+            )
+            self.label_dir_mod2_tr = _path_from_env(
+                "DYNACOLLAB_CAROTID_MRI_TRAIN_LABELS",
+                "./data/CarotidArtery_MRI/labelsTr",
+            )
             self.num_classes = 2
             self.in_channels = 1
         else:
@@ -54,8 +70,9 @@ class Config:
         # Stage-specific settings
         if self.mode == PRETRAINING:
             self.mod = "pretraining"
-            self.batch_size = 2
-            self.batch_size_val = 2
+            self.batch_size = 1
+            self.batch_size_val = 1
+            self.grad_accum_steps = 2
             self.nb_epochs = 100
             self.lr = 3e-5
             self.weight_decay = 1e-4
@@ -67,8 +84,9 @@ class Config:
             self.early_stopping_start_epoch = 1
         else:
             self.mod = "finetuning"
-            self.batch_size = 2
-            self.batch_size_val = 2
+            self.batch_size = 1
+            self.batch_size_val = 1
+            self.grad_accum_steps = 2
             self.nb_epochs = 200
             self.lr = 1e-3
             self.weight_decay = 1e-4
@@ -89,15 +107,8 @@ class Config:
 
         # Output layout (automatic, no manual checkpoint naming needed)
         self.output_root = "./runs"
-        self.run_name = self._build_run_name()
-        self.run_dir = os.path.join(self.output_root, self.run_name)
-        self.log_dir = os.path.join(self.run_dir, "logs")
-        self.checkpoint_dir = os.path.join(self.run_dir, "checkpoints")
-
-        # Keep compatibility with existing scripts that read checkpoint_name
         self.checkpoint_name = "model"
-        self.latest_checkpoint_path = os.path.join(self.checkpoint_dir, "latest.pth")
-        self.best_checkpoint_path = os.path.join(self.checkpoint_dir, "best.pth")
+        self.refresh_run_paths()
 
     def _build_run_name(self):
         stage = "PT" if self.mode == PRETRAINING else "FT"
@@ -112,10 +123,19 @@ class Config:
             loss_tag = "SegCE_Dice"
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         lr_tag = f"{self.lr:.0e}"
+        accum_tag = f"acc{self.grad_accum_steps}"
         return (
             f"{stage}_{self.data}_{self.model}_{fusion_tag}_"
-            f"gr{self.growth_rate}_lr{lr_tag}_bs{self.batch_size}_{loss_tag}_{timestamp}"
+            f"gr{self.growth_rate}_lr{lr_tag}_bs{self.batch_size}_{accum_tag}_{loss_tag}_{timestamp}"
         )
+
+    def refresh_run_paths(self):
+        self.run_name = self._build_run_name()
+        self.run_dir = os.path.join(self.output_root, self.run_name)
+        self.log_dir = os.path.join(self.run_dir, "logs")
+        self.checkpoint_dir = os.path.join(self.run_dir, "checkpoints")
+        self.latest_checkpoint_path = os.path.join(self.checkpoint_dir, "latest.pth")
+        self.best_checkpoint_path = os.path.join(self.checkpoint_dir, "best.pth")
 
     @property
     def baseline(self):
