@@ -1,0 +1,7 @@
+torch>=1.13
+numpy
+scipy
+nibabel
+scikit-learn
+medpy
+tqdm

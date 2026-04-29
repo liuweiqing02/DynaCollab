@@ -1,12 +1,11 @@
 import logging
 import os
 
-import pandas as pd
 from torch.utils.data import Subset
 
-from CompatibleModel import CompatibleModel
 from config import PRETRAINING
 from dataset import split_dataset
+from trainer import Trainer
 from training.builders import build_dataloaders, build_loss, build_model_pair, get_dataset_class
 
 
@@ -41,7 +40,10 @@ def save_validation_ids(dataset, dataset_val, config):
             val_ids.append(dataset.get_id(original_idx))
         except Exception:
             continue
-    pd.Series(val_ids).to_csv(os.path.join(config.log_dir, "validation_ids.csv"), index=False)
+    with open(os.path.join(config.log_dir, "validation_ids.csv"), "w", encoding="utf-8") as f:
+        f.write("id\n")
+        for val_id in val_ids:
+            f.write(f"{val_id}\n")
 
 
 def build_train_val_datasets(dataset_cls, config):
@@ -63,7 +65,7 @@ def build_train_val_datasets(dataset_cls, config):
 
 
 def run_training(config):
-    logger = logging.getLogger("CLseg")
+    logger = logging.getLogger("DynaCollab")
     init_logger(logger, config)
     dump_run_metadata(config, logger)
 
@@ -81,7 +83,7 @@ def run_training(config):
     loader_train, loader_val = build_dataloaders(dataset_train_full, dataset_train, dataset_val, config)
     net_1, net_2 = build_model_pair(config)
     loss = build_loss(config)
-    model = CompatibleModel(net_1, net_2, loss, loader_train, loader_val, config, dataset_val=dataset_val)
+    model = Trainer(net_1, net_2, loss, loader_train, loader_val, config, dataset_val=dataset_val)
 
     if config.mode == PRETRAINING:
         model.pretraining()

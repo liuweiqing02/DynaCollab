@@ -15,37 +15,29 @@ def _path_from_env(name, default):
 
 
 class Config:
-    def __init__(self, mode, data="dongmai"):
+    def __init__(self, mode, data="carotid"):
         assert mode in {PRETRAINING, FINE_TUNING}, f"Unknown mode: {mode}"
         self.mode = mode
 
-        # Core experiment choices
-        self.data = data  # dongmai | BraTs19
-        self.model = "CrossModalUNet"  # CrossModalUNet | UNet | VTUNet | UNETR | UniUnet
+        self.data = data
+        self.model = "DynaCollab"
         self.growth_rate = 32
 
-        # Fusion strategy:
-        # baseline  -> no cross-modal interaction (MV0)
-        # daa       -> DAA without CMAU
-        # daa_cmau  -> DAA with CMAU
         self.fusion_strategy = FUSION_DAA_CMAU
-
-        # Pretraining loss mode
+        self.pretrain_loss = "tstcl"
         self.use_global_local_loss = True
 
-        # Spatial preprocess
         self.input_size = (1, 128, 128, 128)
         self.desired_spacing = (1.5, 1.5, 1.5)
         self.target_size = (128, 128, 128)
         self.target_size_crop = (128, 128, 128)
         self.enable_memory_cache = True
 
-        # Dataset-specific settings
         if self.data == "BraTs19":
             self.dir_tr = _path_from_env("DYNACOLLAB_BRATS_TRAIN_DIR", "./data/BraTS19/HGG")
             self.num_classes = 4
             self.in_channels = 2
-        elif self.data == "dongmai":
+        elif self.data == "carotid":
             self.image_dir_mod1_tr = _path_from_env(
                 "DYNACOLLAB_CAROTID_CT_TRAIN_IMAGES",
                 "./data/CarotidArtery_CT/imagesTr",
@@ -67,7 +59,6 @@ class Config:
         else:
             raise ValueError(f"Unsupported dataset: {self.data}")
 
-        # Stage-specific settings
         if self.mode == PRETRAINING:
             self.mod = "pretraining"
             self.batch_size = 1
@@ -77,7 +68,7 @@ class Config:
             self.lr = 3e-5
             self.weight_decay = 1e-4
             self.tf = "no_tf"
-            self.pretrained_checkpoint_path = None  # Resume pretraining from checkpoint
+            self.pretrained_checkpoint_path = None
             self.use_early_stopping = True
             self.early_stopping_patience = 20
             self.early_stopping_min_delta = 1e-4
@@ -91,21 +82,19 @@ class Config:
             self.lr = 1e-3
             self.weight_decay = 1e-4
             self.tf = "no_tf"
-            self.pretrained_path = None  # Load pretrained weights only
-            self.finetuning_checkpoint_path = None  # Resume finetuning with optimizer/scheduler
+            self.pretrained_path = None
+            self.finetuning_checkpoint_path = None
             self.use_early_stopping = True
             self.early_stopping_patience = 25
             self.early_stopping_min_delta = 1e-4
             self.early_stopping_start_epoch = 41
 
-        # Runtime settings
         self.pin_mem = True
         self.num_cpu_workers = 8
         self.cuda = True
         self.train_ratio = 0.8
         self.split_seed = 42
 
-        # Output layout (automatic, no manual checkpoint naming needed)
         self.output_root = "./runs"
         self.checkpoint_name = "model"
         self.refresh_run_paths()
@@ -118,7 +107,7 @@ class Config:
             FUSION_DAA_CMAU: "DAA_CMAU",
         }[self.fusion_strategy]
         if self.mode == PRETRAINING:
-            loss_tag = "GL" if self.use_global_local_loss else "DualModalCL"
+            loss_tag = "TSTCL" if self.pretrain_loss == "tstcl" else "Contrastive"
         else:
             loss_tag = "SegCE_Dice"
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

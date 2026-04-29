@@ -1,2 +1,1 @@
-"""Training pipeline package for CLseg."""
-
+"""Training pipeline package for DynaCollab."""

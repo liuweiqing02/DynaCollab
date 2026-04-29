@@ -5,14 +5,13 @@ import re
 
 import nibabel as nib
 import numpy as np
-import pandas as pd
 import torch
 from scipy.ndimage import zoom
 from torch.utils.data import Dataset, random_split
 
 from augmentations import Blur, Crop, Cutout, Flip, Noise, Normalize, SafeTransformer
 
-logger = logging.getLogger("CLseg")
+logger = logging.getLogger("DynaCollab")
 
 
 def load_nifti_file(file_path, num_classes=None):
@@ -21,7 +20,6 @@ def load_nifti_file(file_path, num_classes=None):
     original_spacing = img.header.get_zooms()[:3]
     affine = img.affine
 
-    # Keep historical binary-label behavior for dongmai labels.
     if "label" in file_path.lower():
         data = (data > 0).astype(data.dtype)
 
@@ -49,7 +47,7 @@ def resample_data(data, original_spacing, desired_spacing, is_label=False):
     resize_factor = np.array(original_spacing) / np.array(desired_spacing)
     new_shape = np.round(np.array(data.shape) * resize_factor)
     real_resize_factor = new_shape / np.array(data.shape)
-    # Labels: nearest-neighbor; images: linear interpolation.
+                                                             
     order = 0 if is_label else 1
     return zoom(data, real_resize_factor, mode="nearest", order=order)
 
@@ -124,13 +122,6 @@ def process_lists_to_collect_digits(lists):
     return collected_digits
 
 
-def read_excel(file_path):
-    df = pd.read_excel(file_path, engine="openpyxl")
-    if {"id", "class"}.issubset(df.columns):
-        return {row["id"]: row["class"] for _, row in df.iterrows()}
-    raise ValueError("Input excel must contain columns: id, class")
-
-
 def get_unique_labels(label):
     unique_labels, counts = np.unique(label.flatten(), return_counts=True)
     for label_value, count in zip(unique_labels, counts):
@@ -166,7 +157,7 @@ def build_vessel_safe_aug_val(config, input_size):
     return transformer
 
 
-class Dataset_single(Dataset):
+class DatasetCarotid(Dataset):
     def __init__(self, config, training=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.config = config
@@ -199,7 +190,7 @@ class Dataset_single(Dataset):
         collected_digits = process_lists_to_collect_digits(all_lists)
         if not collected_digits:
             raise ValueError("Modality/image/label filename IDs are not aligned across folders.")
-        logger.info(f"Dataset_single paired samples: {len(collected_digits)}")
+        logger.info(f"DatasetCarotid paired samples: {len(collected_digits)}")
 
     def collate_fn(self, list_samples):
         list_mod1 = torch.stack(
@@ -293,7 +284,7 @@ class Dataset_single(Dataset):
         return int(extract_digit_from_filename(self.image_paths_mod1[idx]))
 
 
-class Dataset_BraTs19(Dataset):
+class DatasetBraTS19(Dataset):
     def __init__(self, config, training=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.config = config
@@ -324,7 +315,13 @@ class Dataset_BraTs19(Dataset):
             possible_prefixes = [folder, "_".join(folder.split("_")[:2])]
             valid_folder = False
             for prefix in possible_prefixes:
-                required_files = [f"{prefix}_t1ce.nii", f"{prefix}_flair.nii", f"{prefix}_seg.nii"]
+                required_files = [
+                    f"{prefix}_t1.nii",
+                    f"{prefix}_t1ce.nii",
+                    f"{prefix}_t2.nii",
+                    f"{prefix}_flair.nii",
+                    f"{prefix}_seg.nii",
+                ]
                 if all(os.path.exists(os.path.join(folder_path, req)) for req in required_files):
                     self.patient_folders.append(folder)
                     self.file_prefixes[folder] = prefix
@@ -336,7 +333,14 @@ class Dataset_BraTs19(Dataset):
         if not self.patient_folders:
             raise RuntimeError(f"No valid BraTS19 cases found in {self.data_dir}")
 
-        logger.info(f"Dataset_BraTs19 valid cases: {len(self.patient_folders)}")
+        logger.info(f"DatasetBraTS19 valid cases: {len(self.patient_folders)}")
+
+    def _load_image_channel(self, file_path):
+        image, spacing, _ = load_nifti_file_brains(file_path)
+        image = resample_data(image, spacing, self.desired_spacing, is_label=False)
+        image = preprocess_data_3shape(image, self.target_size, method="pad")
+        image = fixed_center_crop(image, self.target_size_crop)
+        return np.expand_dims(image, axis=0)
 
     def collate_fn(self, list_samples):
         list_mod1, list_mod2, list_label1, list_label2, list_id = [], [], [], [], []
@@ -366,21 +370,16 @@ class Dataset_BraTs19(Dataset):
                 mod2_image = self.mod2_cache[idx].copy()
                 label_data = self.label_cache[idx].copy()
             else:
-                mod1_path = os.path.join(folder_path, f"{prefix}_t1ce.nii")
-                mod2_path = os.path.join(folder_path, f"{prefix}_flair.nii")
+                t1_path = os.path.join(folder_path, f"{prefix}_t1.nii")
+                t1ce_path = os.path.join(folder_path, f"{prefix}_t1ce.nii")
+                t2_path = os.path.join(folder_path, f"{prefix}_t2.nii")
+                flair_path = os.path.join(folder_path, f"{prefix}_flair.nii")
                 label_path = os.path.join(folder_path, f"{prefix}_seg.nii")
 
-                mod1, mod1_spacing, _ = load_nifti_file_brains(mod1_path)
-                mod1 = resample_data(mod1, mod1_spacing, self.desired_spacing, is_label=False)
-                mod1 = preprocess_data_3shape(mod1, self.target_size, method="pad")
-                mod1 = fixed_center_crop(mod1, self.target_size_crop)
-                mod1 = np.expand_dims(mod1, axis=0)
-
-                mod2, mod2_spacing, _ = load_nifti_file_brains(mod2_path)
-                mod2 = resample_data(mod2, mod2_spacing, self.desired_spacing, is_label=False)
-                mod2 = preprocess_data_3shape(mod2, self.target_size, method="pad")
-                mod2 = fixed_center_crop(mod2, self.target_size_crop)
-                mod2 = np.expand_dims(mod2, axis=0)
+                t1 = self._load_image_channel(t1_path)
+                t1ce = self._load_image_channel(t1ce_path)
+                t2 = self._load_image_channel(t2_path)
+                flair = self._load_image_channel(flair_path)
 
                 label, label_spacing, _ = load_nifti_file_brains(label_path, num_classes=self.num_classes)
                 label = resample_data(label, label_spacing, self.desired_spacing, is_label=True)
@@ -388,12 +387,12 @@ class Dataset_BraTs19(Dataset):
                 label = fixed_center_crop(label, self.target_size_crop)
                 label = np.expand_dims(label, axis=0)
 
-                mod1_image = mod1
-                mod2_image = mod2
+                mod1_image = np.concatenate((t1, t1ce), axis=0)
+                mod2_image = np.concatenate((t2, flair), axis=0)
                 label_data = label
                 if self.enable_memory_cache:
-                    self.mod1_cache[idx] = mod1.copy()
-                    self.mod2_cache[idx] = mod2.copy()
+                    self.mod1_cache[idx] = mod1_image.copy()
+                    self.mod2_cache[idx] = mod2_image.copy()
                     self.label_cache[idx] = label.copy()
 
             mod1_data = np.concatenate((mod1_image, label_data), axis=0)
@@ -412,10 +411,10 @@ class Dataset_BraTs19(Dataset):
 
             mod1_data_copy = mod1_data.copy()
             mod2_data_copy = mod2_data.copy()
-            mod1_data = np.expand_dims(mod1_data_copy[0], axis=0)
-            mod2_data = np.expand_dims(mod2_data_copy[0], axis=0)
-            mod1_label = np.expand_dims(mod1_data_copy[1], axis=0)
-            mod2_label = np.expand_dims(mod2_data_copy[1], axis=0)
+            mod1_data = mod1_data_copy[:-1]
+            mod2_data = mod2_data_copy[:-1]
+            mod1_label = np.expand_dims(mod1_data_copy[-1], axis=0)
+            mod2_label = np.expand_dims(mod2_data_copy[-1], axis=0)
             return mod1_data, mod2_data, mod1_label, mod2_label, patient_id
 
         except Exception as e:
@@ -438,4 +437,3 @@ def split_dataset(dataset, train_ratio=0.8, seed=42):
     train_size = int(train_ratio * total_size)
     val_size = total_size - train_size
     return random_split(dataset, [train_size, val_size], generator=generator)
-

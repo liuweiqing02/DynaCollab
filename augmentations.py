@@ -107,7 +107,7 @@ class Crop(object):
         self.copping_type = type
         self.resize = resize
         self.keep_dim = keep_dim
-        self.is_label = is_label  # 新增：标识是否用于标签
+        self.is_label = is_label               
 
     def __call__(self, arr, is_label=False):
         assert isinstance(arr, np.ndarray)
@@ -116,7 +116,7 @@ class Crop(object):
             if shape_len not in {len(arr.shape), len(arr.shape) - 1}:
                 raise AssertionError("Shape of array {} does not match {}".format(arr.shape, self.shape))
 
-        # 记录原始数据类型
+                  
         original_dtype = arr.dtype
 
         img_shape = np.array(arr.shape)
@@ -125,7 +125,7 @@ class Crop(object):
         else:
             size = np.copy(self.shape)
             if len(size) == len(img_shape) - 1:
-                # Treat provided shape as spatial-only and keep channel axis unchanged.
+                                                                                       
                 size = np.concatenate(([img_shape[0]], size))
 
         indexes = []
@@ -141,20 +141,20 @@ class Crop(object):
         cropped = arr[tuple(indexes)]
 
         if self.resize:
-            # 对于标签数据，使用最近邻插值保持整数
+                                
             if is_label or self.is_label:
-                # 使用最近邻插值
+                         
                 resized = sk_tf.resize(
                     cropped,
                     img_shape,
-                    order=0,  # 最近邻插值
+                    order=0,         
                     preserve_range=True,
                     anti_aliasing=False
                 )
-                # 确保数据类型与原始一致
+                             
                 return resized.astype(original_dtype)
             else:
-                # 对于图像数据，使用默认插值
+                               
                 return sk_tf.resize(cropped, img_shape, preserve_range=True)
 
         if self.keep_dim:
@@ -187,7 +187,7 @@ class Cutout(object):
         else:
             size = np.copy(self.patch_size)
         if len(size) == len(img_shape) - 1:
-            # Spatial-only patch size: keep channel dimension intact.
+                                                                     
             size = np.concatenate(([img_shape[0]], size))
         assert len(size) == len(img_shape), "Incorrect patch dimension."
         indexes = []
@@ -223,7 +223,7 @@ class Flip(object):
         if self.axis is not None:
             axis = self.axis
         elif arr.ndim >= 4:
-            # Channel-first arrays: only flip spatial dimensions.
+                                                                 
             axis = np.random.randint(low=1, high=arr.ndim, size=1)[0]
         else:
             axis = np.random.randint(low=0, high=arr.ndim, size=1)[0]
@@ -325,7 +325,7 @@ class Rotate3D(object):
         self.mode = mode
         self.cval = cval
 
-        # Will be set during call
+                                 
         self.current_angles = None
         self.rotation_matrix = None
         self.offset = None
@@ -336,26 +336,26 @@ class Rotate3D(object):
         shared_params: dictionary for parameter synchronization
         is_label: flag for label channel processing
         """
-        # Get parameters from shared params or generate new
+                                                           
         if shared_params and 'rotate' in shared_params:
             params = shared_params['rotate']
             angles = params['angles']
             R_matrix = params['matrix']
             offset = params['offset']
         else:
-            # Generate new parameters
+                                     
             angles = [np.random.uniform(low, high) for low, high in self.angle_ranges]
 
-            # Create rotation matrix
+                                    
             rot = R.from_euler('zyx', angles, degrees=True)
             R_matrix = rot.as_matrix()
 
-            # Calculate offset to keep center position
+                                                      
             spatial_shape = arr.shape
             center = np.array([(d - 1) / 2 for d in spatial_shape])
             offset = center - R_matrix.dot(center)
 
-            # Save to shared params if provided
+                                               
             if shared_params is not None:
                 shared_params['rotate'] = {
                     'angles': angles,
@@ -363,10 +363,10 @@ class Rotate3D(object):
                     'offset': offset
                 }
 
-        # Use nearest neighbor interpolation for labels
+                                                       
         current_order =0 if is_label else 1
 
-        # Apply rotation
+                        
         rotated = scipy.ndimage.affine_transform(
             arr,
             matrix=R_matrix,
@@ -392,7 +392,7 @@ class ElasticTransform3D:
         self.mode = mode
         self.cval = cval
 
-        # 共享参数存储
+                
         self.current_alpha = None
         self.displacement = None
 
@@ -404,10 +404,10 @@ class ElasticTransform3D:
         if shared_params and 'elastic' in shared_params:
             displacement = shared_params['elastic']['displacement']
         else:
-            # 生成新的位移场（仅在第一次调用时生成）
-            np.random.seed()  # 避免全局种子干扰
+                                 
+            np.random.seed()            
             alpha = np.random.uniform(*self.alpha_range)
-            shape = arr.shape  # [D, H, W]
+            shape = arr.shape             
 
             dx = gaussian_filter(
                 (np.random.rand(*shape) * 2 - 1),
@@ -418,12 +418,12 @@ class ElasticTransform3D:
             dz = gaussian_filter(
                 (np.random.rand(*shape) * 2 - 1),
                 self.sigma, mode='constant', cval=0) * alpha
-            displacement = np.stack([dz, dy, dx], axis=0)  # [3, D, H, W]
+            displacement = np.stack([dz, dy, dx], axis=0)                
 
             if shared_params is not None:
                 shared_params['elastic'] = {'displacement': displacement}
 
-        # 应用位移场
+               
         return self._apply_displacement(arr, displacement, order=0 if is_label else 1)
 
     def _apply_displacement(self, data, displacement, order):
@@ -443,63 +443,63 @@ class ElasticTransform3D:
             cval=self.cval
         ).reshape(D, H, W)
 
-# class SafeTransformer(object):
-#     """改进后的增强处理器，支持同步和独立增强"""
-#     Transform = namedtuple("Transform", ["transform", "probability", "apply_to"])
-#
-#     def __init__(self):
-#         self.transforms = []
-#
-#     def register(self, transform, probability=1, apply_to='image'):
-#         """注册增强方法，指定作用对象"""
-#         trf = self.Transform(transform=transform, probability=probability, apply_to=apply_to)
-#         self.transforms.append(trf)
-#
-#     def __call__(self, data):
-#         # 解包数据并判断是否有标签
-#         if len(data) == 1:
-#             image = data[0]
-#             label = None
-#         else:
-#             image = data[0]
-#             label = data[1]
-#
-#         for trf in self.transforms:
-#             if np.random.rand() < trf.probability:
-#                 if trf.apply_to == 'both':
-#                     # 同步变换处理（图像和标签）
-#                     if label is not None:
-#                         seed = np.random.randint(0, 2 ** 32)
-#                         # 处理图像
-#                         np.random.seed(seed)
-#                         torch.manual_seed(seed)
-#                         transformed_image = trf.transform(image,is_label=False)
-#                         # 处理标签（使用相同种子）
-#                         np.random.seed(seed)
-#                         torch.manual_seed(seed)
-#                         transformed_label = trf.transform(label,is_label=True)
-#                         image, label = transformed_image, transformed_label
-#                     else:
-#                         # 只有图像时单独处理
-#                         seed = np.random.randint(0, 2 ** 32)
-#                         np.random.seed(seed)
-#                         torch.manual_seed(seed)
-#                         image = trf.transform(image, is_label=False)
-#                 elif trf.apply_to == 'image':
-#                     image = trf.transform(image, is_label=False)
-#                 elif trf.apply_to == 'label':
-#                     if label is not None:
-#                         label = trf.transform(label, is_label=True)
-#                 # unique_vals = np.unique(label)
-#                 # print(unique_vals)
-#
-#         # 保持维度一致性
-#         image = np.expand_dims(image, axis=0)
-#         if label is not None:
-#             label = np.expand_dims(label, axis=0)
-#             return np.concatenate([image, label], axis=0)
-#         else:
-#             return image
+                                
+                               
+                                                                                   
+ 
+                         
+                              
+ 
+                                                                     
+                             
+                                                                                               
+                                     
+ 
+                               
+                        
+                            
+                             
+                          
+               
+                             
+                             
+ 
+                                     
+                                                    
+                                            
+                                     
+                                           
+                                                              
+                                
+                                              
+                                                 
+                                                                                 
+                                        
+                                              
+                                                 
+                                                                                
+                                                                             
+                           
+                                     
+                                                              
+                                              
+                                                 
+                                                                      
+                                               
+                                                                  
+                                               
+                                           
+                                                                     
+                                                  
+                                      
+ 
+                   
+                                               
+                               
+                                                   
+                                                           
+               
+                          
 
 class SafeTransformer(object):
     """改进后的增强处理器，支持同步和独立增强"""
@@ -514,33 +514,33 @@ class SafeTransformer(object):
         self.transforms.append(trf)
 
     def __call__(self, data):
-        # 解包数据并判断是否有标签
+                      
         if len(data) == 1:
             image = data
             label = None
         else:
             num_channels = data.shape[0]
             image_channels = num_channels - 1
-            image = data[:image_channels, ...]  # 图像部分 [image_channels, D, H, W]
-            label = data[image_channels:, ...]  # 标签部分 [1, D, H, W]
+            image = data[:image_channels, ...]                                  
+            label = data[image_channels:, ...]                     
 
         for trf in self.transforms:
             if np.random.rand() < trf.probability:
                 if trf.apply_to == 'both':
-                    # 同步变换处理（图像和标签）
+                                   
                     if label is not None:
                         seed = np.random.randint(0, 2 ** 32)
-                        # 处理图像
+                              
                         np.random.seed(seed)
                         torch.manual_seed(seed)
                         transformed_image = trf.transform(image,is_label=False)
-                        # 处理标签（使用相同种子）
+                                      
                         np.random.seed(seed)
                         torch.manual_seed(seed)
                         transformed_label = trf.transform(label,is_label=True)
                         image, label = transformed_image, transformed_label
                     else:
-                        # 只有图像时单独处理
+                                   
                         seed = np.random.randint(0, 2 ** 32)
                         np.random.seed(seed)
                         torch.manual_seed(seed)
@@ -550,10 +550,10 @@ class SafeTransformer(object):
                 elif trf.apply_to == 'label':
                     if label is not None:
                         label = trf.transform(label, is_label=True)
-                # unique_vals = np.unique(label)
-                # print(unique_vals)
+                                                
+                                    
 
-        # 保持维度一致性
+                 
         if label is not None:
             return np.concatenate([image, label], axis=0)
         else:
@@ -561,9 +561,9 @@ class SafeTransformer(object):
 
 if __name__ == '__main__':
     transformer = Transformer()
-    # 每个轴旋转角度范围：x(-15,15)，y(-20,20)，z(-10,10)
+                                             
     transformer.register(Rotate(angles=(15, 20, 10)), probability=0.5)
 
-    # 应用变换
-    input_data = np.random.rand(3, 32, 32, 32)  # 假设通道在前
+          
+    input_data = np.random.rand(3, 32, 32, 32)          
     output_data = transformer(input_data)
