@@ -1,7 +1,1 @@
-torch>=1.13
-numpy
-scipy
-nibabel
-scikit-learn
-medpy
-tqdm
+# No mandatory runtime dependencies are required for the public preview.
